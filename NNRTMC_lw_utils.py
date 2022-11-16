@@ -29,6 +29,8 @@ def draw_batches(indice_train, batch_size, rng, device, replace=False):
     return batch_indice_train 
 
 def data_std_normalization(input_array, output_array, nomral_para = None):
+    sample_size = input_array.shape[0]
+    print(f"Total data size: {sample_size}")
     ###################################################### 
     if nomral_para == None:
         ## normalization based on data std
@@ -56,13 +58,13 @@ def data_std_normalization(input_array, output_array, nomral_para = None):
     return nomral_para, input_array, output_array 
 
 def data_std_normalization_sw(input_array, output_array, nomral_para = None):
+    sample_size = input_array.shape[0]
+    print(f"Total data size: {sample_size}")
     ###################################################### 
     if nomral_para == None:
         # remove data that rsdt == 0 (night, no shortwave transfer) 
-        sample_size = input_array.shape[0]
         day_ind = np.argwhere(~np.isclose(input_array[:,-1],0,rtol=1e-05, atol=1e-2,)).squeeze()
         sample_size2 = day_ind.shape[0]
-        print(f"Total data size: {sample_size}")
         print(f"Night time will be removed! (rsdt==0)")
         print(f"Total data size (daylight): {sample_size2}")
         input_array  = input_array[day_ind]
