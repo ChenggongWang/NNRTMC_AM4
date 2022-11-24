@@ -1,6 +1,5 @@
 import xarray as xr
 import numpy as np 
-
 def get_AM4_data_lw(out_filelist, inp_filelist, condition='csaf', month_sel = None, day_sel = None, return_coords = False):
     # sample data by month and day
     if month_sel == None:
@@ -43,9 +42,9 @@ def get_AM4_data_lw(out_filelist, inp_filelist, condition='csaf', month_sel = No
             out_var_name = out_var_name_af
         else: raise Exception(f"condition {condition} is not configured")
         
-        input_sf =[[var_ps.stack(txy=("time","grid_yt", "grid_xt")).values],]
+        input_sf =[[var_ps.stack(txy=("time","grid_xt", "grid_yt")).values],]
         for _var in inp_var_name:  # for all vars
-            tmp = ds_inp[_var].stack(txy=("time","grid_yt", "grid_xt")).fillna(0).values
+            tmp = ds_inp[_var].stack(txy=("time","grid_xt", "grid_yt")).fillna(0).values
             if len(tmp.shape)==1:
                 input_sf.append(tmp[None,:]) # addtional dim
             else:
@@ -53,7 +52,7 @@ def get_AM4_data_lw(out_filelist, inp_filelist, condition='csaf', month_sel = No
         input_sf = np.concatenate(input_sf)
         output_sf = []
         for _var in out_var_name:  # for all vars
-            tmp = ds_out[_var].stack(txy=("time","grid_yt", "grid_xt")).fillna(0).values
+            tmp = ds_out[_var].stack(txy=("time","grid_xt", "grid_yt")).fillna(0).values
             if len(tmp.shape)==1:
                 output_sf.append(tmp[None,:]) # addtional dim
             else:
