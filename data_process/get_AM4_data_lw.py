@@ -7,6 +7,8 @@ def get_AM4_data_lw(out_filelist, inp_filelist, condition='csaf', month_sel = No
         month_sel = [1,2,3,4,5,6,7,8,9,10,11,12]
     if day_sel == None: 
         day_sel = [1]
+    print("Data files:")
+    print(out_filelist, inp_filelist)
     print(f"Data selection:\n    Month: {month_sel} \n    Day: {day_sel} \nReading data...", end=' ')
     
     input_array_list = []
@@ -15,11 +17,10 @@ def get_AM4_data_lw(out_filelist, inp_filelist, condition='csaf', month_sel = No
     for tile_i in range(len(out_filelist)): 
         print (tile_i, end=' ')
         # read data from files  
+        # inputs
         ds = xr.open_dataset(inp_filelist[tile_i])
         time_sel = ds.time.dt.month.isin(month_sel)&ds.time.dt.day.isin(day_sel)
         ds_inp = ds.isel(time=time_sel)
-        ds = xr.open_dataset(out_filelist[tile_i])
-        ds_out = ds.isel(time=time_sel)
         var_ps = ds_inp['level_pressure'].isel(phalf=-1) # this will be included in input by default
         inp_var_name_csaf   = ['level_temperature'  ,'surface_temperature', 'water_vapor' ,'ozone' ]
         inp_var_name_cloud  = ['stratiform_droplet_number' ,'stratiform_cloud_fraction' ,
@@ -32,15 +33,10 @@ def get_AM4_data_lw(out_filelist, inp_filelist, condition='csaf', month_sel = No
         #                        'shallow_droplet_number'    ,'shallow_cloud_fraction'    ,
         #                        'shallow_liquid_content'    ,'shallow_ice_content'       ,
         #                        'strat_size_drop'           ,'shallow_size_drop'          ]
-        out_var_name_csaf   = ['rldscsaf'  ,'rlus', 'rlutcsaf' ,'tntrlcsaf' ]
-        out_var_name_af     = ['rldsaf'  ,'rlus', 'rlutaf' ,'tntrlaf' ]
-        out_var_name_cs     = ['rldscs'  ,'rlus', 'rlutcs' ,'tntrlcs' ]
         if condition == 'csaf':
-            inp_var_name = inp_var_name_csaf
-            out_var_name = out_var_name_csaf
+            inp_var_name = inp_var_name_csaf 
         elif condition == 'af':
-            inp_var_name = inp_var_name_csaf + inp_var_name_cloud
-            out_var_name = out_var_name_af
+            inp_var_name = inp_var_name_csaf + inp_var_name_cloud 
         else: raise Exception(f"condition {condition} is not configured")
         
         input_sf =[[var_ps.stack(txy=("time","grid_yt", "grid_xt")).values],]
@@ -51,9 +47,26 @@ def get_AM4_data_lw(out_filelist, inp_filelist, condition='csaf', month_sel = No
             else:
                 input_sf.append(tmp)
         input_sf = np.concatenate(input_sf)
-        output_sf = []
-        for _var in out_var_name:  # for all vars
-            tmp = ds_out[_var].stack(txy=("time","grid_yt", "grid_xt")).fillna(0).values
+        
+        # outputs
+        ds = xr.open_dataset(out_filelist[tile_i])
+        ds_out = ds.isel(time=time_sel)
+        out_var_list_csaf   = [ds_out['rldcsaf'  ].isel(phalf=-1), 
+                               ds_out['rlucsaf'  ].isel(phalf=-1),
+                               ds_out['rlucsaf'  ].isel(phalf=0 ),
+                               ds_out['tntrlcsaf'] ] # no aerosols
+        out_var_list_af     = [ds_out['rldaf'    ].isel(phalf=-1), 
+                               ds_out['rluaf'    ].isel(phalf=-1),
+                               ds_out['rluaf'    ].isel(phalf=0 ),
+                               ds_out['tntrlaf'  ] ] # no aerosols 
+        if condition == 'csaf':
+            out_var_list = out_var_list_csaf 
+        elif condition == 'af':
+            out_var_list = out_var_list_af  
+        else: raise Exception(f"condition {condition} is not configured")
+        output_sf = [] 
+        for _var in out_var_list:  # for all vars
+            tmp = _var.stack(txy=("time","grid_yt", "grid_xt")).fillna(0).values
             if len(tmp.shape)==1:
                 output_sf.append(tmp[None,:]) # addtional dim
             else:

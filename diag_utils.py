@@ -136,7 +136,7 @@ def create_6tiles_lw(ds_coords, predi, error, eng_err, exp_dir, output_name):
                         )
         var_4d_name = ['tntrl', 'err_tntrl']
         var_3d_name = ['rlds', 'rlus','rlut',
-                       'err_rlds', 'err_rlus','err_rlut', 'er_eng']
+                       'err_rlds', 'err_rlus','err_rlut', 'err_eng']
         for _var in var_4d_name:
             ds[_var] = ds[_var].transpose("time", "pfull", "grid_yt", "grid_xt")
         for _var in var_3d_name:
