@@ -3,7 +3,7 @@
 # ifort: ?gemm come with mkl improves the speed
 
 run NN_speed_sgemv.F90 on stellar (intel cpu).
--mkl=sequential forced the code to run in non-threaded mode.
+-mkl=sequential forced the code to run in non-threaded mode (or is will use all cores which will slow down the speed).
 it is faster in this case (on a muticore system).
 
 ``` 
@@ -29,18 +29,27 @@ SGEMV  avg time per run =  0.038 ms
 # gfortran: avoid inlining of matmul is important
 source: https://stackoverflow.com/questions/66682180/why-is-matmul-slower-with-gfortran-compiler-optimization-turned-on
 
--O3 is slower?
+-O3 is slower and -lblas is not realy working
 ```
-$ gfortran -O0 NN_speed2.f90 -o NN_speed2.out; ./NN_speed2.out
+$ gfortran -O0 NN_speed_sgemv.F90 -lblas; ./a.out
 total run times:  10000
-matmul avg time per run =  0.047 ms
-$ gfortran -O3 NN_speed2.f90 -o NN_speed2.out; ./NN_speed2.out
+matmul avg time per run =  0.060 ms
+loop  avg time per run =  0.640 ms
+SGEMM  avg time per run =  0.775 ms
+SGEMV  avg time per run =  0.328 ms
+$ gfortran -O3 NN_speed_sgemv.F90 -lblas; ./a.out
 total run times:  10000
-matmul avg time per run =  0.270 ms
+matmul avg time per run =  0.324 ms
+loop  avg time per run =  0.319 ms
+SGEMM  avg time per run =  0.799 ms
+SGEMV  avg time per run =  0.323 ms
 ```
--finline-matmul-limit=0
+-finline-matmul-limit=0 helps a lot!
 ```
-$ gfortran -O3 -finline-matmul-limit=0 NN_speed2.f90 -o NN_speed2.out; ./NN_speed2.out
+$ gfortran -O3 -finline-matmul-limit=0 NN_speed_sgemv.F90 -lblas; ./a.out
 total run times:  10000
-matmul avg time per run =  0.040 ms
+matmul avg time per run =  0.045 ms
+loop  avg time per run =  0.326 ms
+SGEMM  avg time per run =  0.800 ms
+SGEMV  avg time per run =  0.337 ms
 ```
