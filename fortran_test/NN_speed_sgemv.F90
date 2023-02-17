@@ -138,6 +138,10 @@ real, allocatable, dimension(:,:) :: a
 real, allocatable, dimension(:)::c
 integer:: i,j, ilayer, total_run
 real :: start, finish
+logical :: check
+
+!print results to check code
+check=.false.
 
 num_layers = 5
 num_hid_nodes = 256
@@ -157,7 +161,7 @@ call cpu_time(start)
 do j = 1, total_run
     allocate(c(size(a,1)))
     call nn_pred_1d_matmul(a(:,j),c)
-    if (j==1) then ; print *,c(:2); end if
+    if (j==1 .and. check) then ; print *,c(:2); end if
     deallocate(c)
 end do
 call cpu_time(finish)
@@ -167,7 +171,7 @@ call cpu_time(start)
 do j = 1, total_run
     allocate(c(size(a,1)))
     call nn_pred_1d_loop(a(:,j),c)
-    if (j==1) then ; print *,c(:2); end if
+    if (j==1 .and. check) then ; print *,c(:2); end if
     deallocate(c)
 end do
 call cpu_time(finish)
@@ -178,7 +182,7 @@ call cpu_time(start)
 do j = 1, total_run
     allocate(c(size(a,1)))
     call nn_pred_1d_sgemm(a(:,j),c)
-    if (j==1) then ; print *,c(:2); end if
+    if (j==1 .and. check) then ; print *,c(:2); end if
     deallocate(c)
 end do
 call cpu_time(finish)
@@ -189,7 +193,7 @@ call cpu_time(start)
 do j = 1, total_run
     allocate(c(size(a,1)))
     call nn_pred_1d_sgemv(a(:,j),c)
-    if (j==1) then ; print *,c(:2); end if
+    if (j==1 .and. check) then ; print *,c(:2); end if
     deallocate(c)
 end do
 call cpu_time(finish)
