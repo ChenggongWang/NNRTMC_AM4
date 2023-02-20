@@ -1,10 +1,11 @@
-# benchmark the performance of matrix multiplication with interl compiler
+# Benchmark the performance of matrix multiplication on stellar
 
 # ifort: ?gemm come with mkl improves the speed
 
-run NN_speed_sgemv.F90 on stellar (intel cpu).
+On Intel CPU
+
 -mkl=sequential forced the code to run in non-threaded mode (or is will use all cores which will slow down the speed).
-it is faster in this case (on a muticore system).
+It is faster in this case (on a muticore system).
 
 ``` 
 $ ifort -mkl=sequential -O3 NN_speed_sgemv.F90 ; ./a.out
@@ -15,7 +16,7 @@ SGEMM  avg time per run =  0.041 ms
 SGEMV  avg time per run =  0.041 ms
 ```
 
-on stellar (amd cpu)
+On AMD CPU
 ``` 
 $ ifort -mkl=sequential -O3 NN_speed_sgemv.F90 ; ./a.out
 total run times:  10000
@@ -29,7 +30,9 @@ SGEMV  avg time per run =  0.038 ms
 # gfortran: avoid inlining of matmul is important
 source: https://stackoverflow.com/questions/66682180/why-is-matmul-slower-with-gfortran-compiler-optimization-turned-on
 
--O3 is slower and -lblas is not realy working
+-O3 is slower
+
+-lblas is not realy working (may need mannully link to correct blas lib)
 ```
 $ gfortran -O0 NN_speed_sgemv.F90 -lblas; ./a.out
 total run times:  10000
@@ -37,6 +40,7 @@ matmul avg time per run =  0.060 ms
 loop  avg time per run =  0.640 ms
 SGEMM  avg time per run =  0.775 ms
 SGEMV  avg time per run =  0.328 ms
+
 $ gfortran -O3 NN_speed_sgemv.F90 -lblas; ./a.out
 total run times:  10000
 matmul avg time per run =  0.324 ms
