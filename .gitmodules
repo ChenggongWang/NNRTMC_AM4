@@ -1,0 +1,3 @@
+[submodule "NN_fortran_demo"]
+	path = NN_fortran_demo
+	url = git@github.com:ChenggongWang/NN_fortran_demo.git
