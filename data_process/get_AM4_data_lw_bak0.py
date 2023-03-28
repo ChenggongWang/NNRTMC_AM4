@@ -26,8 +26,7 @@ def get_AM4_data_lw(out_filelist, inp_filelist, condition='csaf', month_sel = No
         inp_var_name_cloud  = ['stratiform_droplet_number' ,'stratiform_cloud_fraction' ,
                                'stratiform_liquid_content' ,'stratiform_ice_content'    ,
                                'shallow_droplet_number'    ,'shallow_cloud_fraction'    ,
-                               'shallow_liquid_content'    ,'shallow_ice_content'       ,
-                               'strat_size_drop'           ,'shallow_size_drop'          ]
+                               'shallow_liquid_content'    ,'shallow_ice_content'       ]
         # inp_var_name_aersol   = ['stratiform_droplet_number' ,'stratiform_cloud_fraction' ,
         #                        'stratiform_liquid_content' ,'stratiform_ice_content'    ,
         #                        'shallow_droplet_number'    ,'shallow_cloud_fraction'    ,
