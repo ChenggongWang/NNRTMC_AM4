@@ -11,13 +11,12 @@ def get_data_lw_AM4(filelist, condition = 'cs', month_sel = None, day_sel = None
     print(filelist)
     print(f"Data selection:\n    Month: {month_sel} \n    Day: {day_sel} \nReading data...", end=' ')
     
-    
     inp_var_name_csaf   = ['nn_ta'  ,'nn_ts', 'nn_sphum' ,'nn_o3' ]
     inp_var_name_cloud  = ['stratiform_droplet_number' ,'stratiform_cloud_fraction' ,
                            'stratiform_liquid_content' ,'stratiform_ice_content'    ,
                            'shallow_droplet_number'    ,'shallow_cloud_fraction'    ,
                            'shallow_liquid_content'    ,'shallow_ice_content'       ] 
-    print(condition)
+    # print(condition)
     if condition == 'cs':
         inp_var_name = inp_var_name_csaf 
     elif condition == 'all':
@@ -64,7 +63,7 @@ def get_data_lw_AM4(filelist, condition = 'cs', month_sel = None, day_sel = None
         output_sf = np.concatenate(output_sf) 
         input_array_list.append(input_sf)
         output_array_list.append(output_sf)
-        tiles_coords.append(ds_out['tdt_lw'].coords)
+        tiles_coords.append(ds_out.coords)
     #concatenate all tiles/files and transpose the matrix
     input_array_ori  = np.concatenate( input_array_list,axis=1).T
     output_array_ori = np.concatenate(output_array_list,axis=1).T

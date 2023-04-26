@@ -3,6 +3,7 @@ import torch
 from torch import nn  
 import time 
 import os  
+torch.set_float32_matmul_precision('high')
 
 ######################################################
 # NN module includes:
@@ -40,7 +41,8 @@ class NNRTMC_NN:
         """
         self.device = device
         # initial ANN
-        self.NN_model = NeuralNetwork(input_feature_num).to(self.device) 
+        self.NN_model = NeuralNetwork(input_feature_num).to(self.device)  
+        
         if model_dict is not None:
             self.NN_model.load_state_dict(model_dict) 
         self.optimizer = torch.optim.Adam(self.NN_model.parameters(), lr=1e-4, 
@@ -51,9 +53,8 @@ class NNRTMC_NN:
         # parameters
         self.Ak = torch.tensor(Ak).to(self.device)
         self.Bk = torch.tensor(Bk).to(self.device)
-        
-        self.C_p = 1004       # J/kg/K 
-        self.g   = 9.8        # m/s^2 
+        self.C_p = 1004.64    # J/kg/K 
+        self.g   = 9.8        # m/s^2  
         
     def train(self, train_batch_indice, input_torch, output_torch, eng_loss='N', optimizer=None):
         if optimizer is None: 
@@ -134,7 +135,7 @@ class NNRTMC_NN:
 ######################################################
 # common functions to split the training and test data
 # 
-from NNRTMC_lw_utils import  split_train_test_sample, \
+from NNRTMC_utils import  split_train_test_sample, \
 draw_batches, data_std_normalization, print_key_results, return_exp_dir
 
     
@@ -144,8 +145,8 @@ def custom_trainning(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
                      eng_loss, device, rng):
     # update lr based on test loss
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        NNRTMC_solver.optimizer, mode='min', factor=0.2, patience=100, threshold=1e-3, 
-        threshold_mode='rel', cooldown=100, min_lr=0, eps=1e-08, verbose=True) 
+        NNRTMC_solver.optimizer, mode='min', factor=0.2, patience=50, threshold=1e-3, 
+        threshold_mode='rel', cooldown=50, min_lr=0, eps=1e-08, verbose=True) 
     NNRTMC_solver.optimizer.param_groups[0]['lr'] = lr
     ######################################################
     # set training hyperparameter here
@@ -158,7 +159,7 @@ def custom_trainning(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
         lr_scheduler.step(lossvtest[0]+lossvtest[1]) # update lr based on test loss
         if t % de_save == 0:
             used_time = time.time() - sta_time  
-            print( f"Epoch {t+1:06d} |train loss: {lossv[0]:8.2e} {lossv[1]:8.2e} | test loss: {lossvtest[0]:8.2e} {lossvtest[1]:8.2e}  "
+            print( f"Epoch {t+1:06d} |train loss: {lossv[0]:8.2e} {lossv[1]:8.2e} | vali loss: {lossvtest[0]:8.2e} {lossvtest[1]:8.2e}  "
                   +f"| ~ {used_time:3.0f}s | eta {int(used_time*((epochs-t)/de_save/60)) :3d} min")
             sta_time = time.time()
             loss.append([[t+1]+lossv+lossvtest]) # append epochs, loss, test loss
@@ -169,7 +170,7 @@ def custom_trainning(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
                 break
                 
 import xarray as xr 
-from get_AM4_data_lw import get_AM4_data_lw
+from get_data_lw_AM4_std import get_data_lw_AM4
 import argparse, sys
 
 if __name__ == '__main__': 
@@ -190,7 +191,7 @@ if __name__ == '__main__':
     sky_cond = args.sky_cond
     eng_loss = args.eng_loss 
     
-    Exp_name = f'lw_{sky_cond}_Li10Relu_E{eng_loss}' 
+    Exp_name = f'AM4std2_lw_{sky_cond}_LiH4Relu_E{eng_loss}' 
     work_dir = '/tigress/cw55/work/2022_radi_nn/NN_AM4/work/'
     total_run_num  = 4
     epochs = 2000
@@ -221,10 +222,10 @@ if __name__ == '__main__':
 
     ######################################################
     # load data from AM4 runs
-    out_filelist = [f'/scratch/gpfs/cw55/NNRTMC_data/AM4_v2/20000101.fluxes.tile{_}.nc' for _ in range(1,7)]
-    inp_filelist = [f'/scratch/gpfs/cw55/NNRTMC_data/AM4_v2/20000101.new_offline_input.tile{_}.nc' for _ in range(1,7)]
+    filelist = [f'/scratch/gpfs/cw55/AM4/work/FIXSST_2000s_stellarcpu_intelmpi_22_768PE/'+
+            f'HISTORY/20000101.atmos_8xdaily.tile{_}.nc' for _ in range(1,7)] 
     input_array_ori, output_array_ori = \
-    get_AM4_data_lw(out_filelist, inp_filelist, condition=sky_cond, month_sel = None, day_sel = [1, 7]) 
+    get_data_lw_AM4(filelist, condition=sky_cond, month_sel = None, day_sel = [1, 7]) 
     
     hybrid_p_sigma_para = xr.open_dataset('/tigress/cw55/data/NNRTMC_dataset/AM4_pk_bk_202207.nc')
     A_k = hybrid_p_sigma_para.ak.values[None,:]
@@ -256,11 +257,13 @@ if __name__ == '__main__':
         loss_array = np.array(loss).squeeze().T  
         ######################################################
         # save model state dict and data normalization info
-        data_info = out_filelist+inp_filelist
+        data_info = filelist
         PATH =  exp_dir+f'/restart.{i:02d}.pth'
         print('OUTPUT is saved at: '+PATH)
         NNRTMC_solver.save_model_restart(PATH, loss_array, data_info, nor_para)
-        print_key_results( NNRTMC_solver, input_torch[ind_test,:], output_array[ind_test,:], nor_para)
+        print_key_results(NNRTMC_solver.predict(input_torch[ind_test,:]), 
+                          output_array[ind_test,:], 
+                          nor_para)
         lr_sta = 1e-4
         print(f'{Exp_name} Finished: run {i}!')  
         
