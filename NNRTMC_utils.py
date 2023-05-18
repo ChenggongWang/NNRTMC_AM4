@@ -64,7 +64,7 @@ class NNRTMC_NN:
     def predict(self, input_X):
         self.NN_model.eval() # enter evaluation mode
         with torch.no_grad():
-            pred = self.NN_model(input_X).cpu() # analyize on cpu
+            pred = self.NN_model(input_X).cpu().numpy() # analyize on cpu
         return pred
  
     def return_dP_AM4_plev(self, ps): 
@@ -286,14 +286,18 @@ def print_key_results(pred_output, true_output, normal_para):
 ######################################################
     # print key results  # offset in pred and true cancels
     error = (pred_output - true_output)/ normal_para['output_scale'] 
-    print('error.shape')
-    print(error.shape)
+    # print('error.shape')
+    # print(error.shape)
     error[:,3:] = error[:,3:]*86400  
     RMSE = ((error**2).mean(axis=0))**0.5
     MAE  = abs(error).mean(axis=0)
     Bias = error.mean(axis=0)
-    print('TEST: RMSE, MAE, Bias')
-    print(RMSE, '\n', MAE, '\n', Bias)  
+    print('Validation: RMSE')  
+    print(np.array2string(RMSE,formatter={'float_kind':lambda x: "%9.2e" % x}))
+    print('Validation:       MAE')  
+    print(np.array2string(MAE ,formatter={'float_kind':lambda x: "%9.2e" % x}))
+    print('Validation:            Bias')  
+    print(np.array2string(Bias,formatter={'float_kind':lambda x: "%9.2e" % x}))
 
  
     

@@ -4,154 +4,13 @@ from torch import nn
 import time 
 import os  
 
-torch.set_float32_matmul_precision('high')
-
-######################################################
-# NN module includes:
-# NN model structure 
-class NeuralNetwork(nn.Module):
-    def __init__(self, input_feature_num, hidden_layer_width):
-        super(NeuralNetwork, self).__init__()
-        input_feature_num  = input_feature_num
-        hidden_layer_width = hidden_layer_width
-        output_feature_num = 36
-        self.Res_stack = nn.Sequential(
-            nn.Linear(input_feature_num, hidden_layer_width),
-            nn.BatchNorm1d(hidden_layer_width) ,
-            nn.ReLU(),
-            nn.Linear(hidden_layer_width, hidden_layer_width),
-            nn.BatchNorm1d(hidden_layer_width) ,
-            nn.ReLU(),
-            nn.Linear(hidden_layer_width, hidden_layer_width),
-            nn.BatchNorm1d(hidden_layer_width) ,
-            nn.ReLU(),
-            nn.Linear(hidden_layer_width, hidden_layer_width),
-            nn.BatchNorm1d(hidden_layer_width) ,
-            nn.ReLU(),
-            nn.Linear(hidden_layer_width, output_feature_num)
-        ) 
-        
-    def forward(self, x): 
-        return self.Res_stack(x)
-
-    
-class NNRTMC_NN: 
-    def __init__(self,  device, nor_para, Ak, Bk, 
-                 input_feature_num, hidden_layer_width, model_dict = None):
-        """
-        model_dict_path is the saved NN model state dict.
-        """
-        self.device = device
-        # initial ANN
-        self.NN_model = NeuralNetwork(input_feature_num, hidden_layer_width).to(self.device)  
-        
-        if model_dict is not None:
-            self.NN_model.load_state_dict(model_dict) 
-        self.optimizer = torch.optim.Adam(self.NN_model.parameters(), lr=1e-4, 
-                                          betas=(0.9, 0.999), weight_decay=1e-5) 
-        self.loss_fn   = torch.nn.MSELoss()
-        self.nor_para  = {key: torch.tensor(value).to(self.device) for key, value in nor_para.items()} 
-        
-        # parameters
-        self.Ak = torch.tensor(Ak).to(self.device)
-        self.Bk = torch.tensor(Bk).to(self.device)
-        self.C_p = 1004.64    # J/kg/K 
-        self.g   = 9.8        # m/s^2  
-        
-    def train(self, train_batch_indice, input_torch, output_torch, 
-              rsdt_torch, eng_loss_frac=None, optimizer=None):
-        if optimizer is None: 
-            optimizer = self.optimizer
-        self.NN_model.train() # enter training mode
-        for i, batch_ids in enumerate(train_batch_indice):
-            X, Y, rsdt = input_torch [batch_ids,:], \
-                         output_torch[batch_ids,:], \
-                         rsdt_torch  [batch_ids  ]
-            # Compute prediction error
-            Y_pred = self.NN_model(X) 
-            loss_data = self.loss_fn(Y_pred, Y)
-            loss_ener = self.loss_energy(X, Y_pred, rsdt)
-            loss = loss_data
-            if eng_loss_frac != None: 
-                loss += loss_ener*eng_loss_frac
-            # Backpropagation
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        return [loss_data.item(), loss_ener.item()]
-    
-    def test_loss(self, test_indice, input_torch, output_torch, rsdt_torch):
-        self.NN_model.eval() # enter evaluation mode
-        with torch.no_grad():
-            X, Y, rsdt = input_torch [test_indice,:], \
-                         output_torch[test_indice,:], \
-                         rsdt_torch  [test_indice  ]
-            Y_pred = self.NN_model(X) 
-            loss_data = self.loss_fn(Y_pred, Y).item() 
-            loss_ener = self.loss_energy(X, Y_pred, rsdt).item() 
-        return [loss_data, loss_ener]
- 
-    def loss_energy(self,  input_data, output_pred, rsdt): 
-        F_net, sum_Cphr_gdp = self.energy_flux_HR(input_data , output_pred, rsdt) 
-        return self.loss_fn(F_net,sum_Cphr_gdp) 
-
-    def energy_flux_HR(self, Input, Output, rsdt): 
-        # ! rsdt is the last input var
-        Out_unnor = Output/self.nor_para['output_scale'] + self.nor_para['output_offset']
-        F_sw_toa_do = rsdt
-        F_sw_toa_up = Out_unnor[:,0]
-        F_sw_sfc_do = Out_unnor[:,1]
-        F_sw_sfc_up = Out_unnor[:,2]
-        HR = Out_unnor[:,3:]    #  K/s 
-        F_net = F_sw_toa_do*(1 - F_sw_toa_up + F_sw_sfc_up - F_sw_sfc_do) 
-        ps = Input[:,None,0]/self.nor_para['input_scale'][0] + self.nor_para['input_offset'][0] 
-        dP = self.return_dP_AM4_plev(ps)    #  Pa 
-        sum_Cphr_gdp = self.C_p/self.g * (HR*dP).sum(axis=-1) * F_sw_toa_do
-        return F_net, sum_Cphr_gdp
-    
-    def predict(self, input_X):
-        self.NN_model.eval() # enter evaluation mode
-        with torch.no_grad():
-            pred = self.NN_model(input_X).cpu() # analyize on cpu
-        return pred
- 
-    def return_dP_AM4_plev(self, ps): 
-        """
-        ps: Pa
-
-        return: 
-        """ 
-        P_lev = self.Ak + self.Bk*ps
-        # if not np.all(np.diff(p_int)>0):
-        #     raise Exception(f'Input [ps] is not valid. Check units!') 
-        dP = (P_lev[:,1:] - P_lev[:,:33])
-        return dP
-    
-    def save_model_restart(self, PATH, loss_array, data_info, nomral_para):
-        '''
-        Saving & Loading Model for Inference
-        Save/Load state_dict (Recommended)
-        Load: 
-        NNRTMC_solver= NNRTMC(device, model_dict_path = model_state_dict)
-        '''
-        # get a cpu copy of state dict
-        model_state_dict = {key: value.cpu() for key, value in self.NN_model.state_dict().items()}
-        # Save:
-        torch.save({ 'data_info'       : data_info,
-                     'loss_array'      : loss_array,
-                     'nor_para'        : nomral_para,
-                     'model_state_dict': model_state_dict
-                   } , PATH) 
-
-
-
 ######################################################
 # common functions to split the training and test data
 # 
-from NNRTMC_utils import  split_train_test_sample, \
+from NNRTMC_utils import NNRTMC_NN_sw, split_train_test_sample, \
 draw_batches, data_std_normalization_sw, print_key_results, return_exp_dir
+torch.set_float32_matmul_precision('high')
 
-    
 ######################################################
 def custom_trainning(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
                      input_torch, output_torch, rsdt_torch,
@@ -173,7 +32,7 @@ def custom_trainning(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
         lr_scheduler.step(lossvtest[0]+lossvtest[1]) # update lr based on test loss
         if t % de_save == 0:
             used_time = time.time() - sta_time  
-            print( f"Epoch {t+1:06d} |train loss: {lossv[0]:8.2e} {lossv[1]:8.2e} | vali loss: {lossvtest[0]:8.2e} {lossvtest[1]:8.2e}  "
+            print( f"Epoch {t+1:05d} |Train L: {lossv[0]:8.2e} {lossv[1]:8.2e} | Vali. L: {lossvtest[0]:7.1e} {lossvtest[1]:7.1e}  "
                   +f"| ~ {used_time:3.0f}s | eta {int(used_time*((epochs-t)/de_save/60)) :3d} min")
             sta_time = time.time()
             loss.append([[t+1]+lossv+lossvtest]) # append epochs, loss, test loss
@@ -182,7 +41,21 @@ def custom_trainning(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
                 print(f"Meet early stop criteria LR = {NNRTMC_solver.optimizer.param_groups[0]['lr']} < 1e-7" )
                 print("End training")
                 break
-
+    
+######################################################
+def custom_trainning_ens(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
+                         input_torch, output_torch, rsdt_torch,
+                         indice_train, indice_test, 
+                         eng_loss_frac, device, rng):
+    for mi in range(len(NNRTMC_solver)): 
+        print(f"Model #{mi}")
+        loss_mi = []
+        custom_trainning(NNRTMC_solver[mi], lr_sta, loss_mi, epochs, batch_size, de_save,\
+                         input_torch, output_torch, rsdt_torch,\
+                         ind_train, ind_test, eng_loss_frac, device, rng )
+        loss.append(loss_mi)
+        
+######################################################
 import xarray as xr 
 from get_data_sw_AM4_std import get_data_sw_AM4
 import argparse, sys
@@ -196,29 +69,37 @@ if __name__ == '__main__':
     # rng = np.random.default_rng()
     
     #####################################################
-    # set exp name and runs
-    # read sky_cond and eng_loss from run command
+    # set exp name and runs 
+    # read sky_cond and eng_loss from terminal command
     parser=argparse.ArgumentParser()
     parser.add_argument("--sky_cond", help="sky condition: af, csaf")
     parser.add_argument("--eng_loss", help="minimize the energy loss: Y/N")
+    parser.add_argument("--ensemble_size", help="ensemble_size of NN models")
     args=parser.parse_args()
     sky_cond = args.sky_cond
-    eng_loss = args.eng_loss  
+    eng_loss = args.eng_loss 
+    ensemble_num = int(args.ensemble_size) 
+    # sky_cond = 'cs'
+    # sky_cond = 'all'
+    # eng_loss = 'Y' 
     
-    hidden_layer_width = 256
+    hidden_layer_width = 256  
     
-    Exp_name = f'AM4std2_sw_{sky_cond}_LiH4W{hidden_layer_width}Relu_E{eng_loss}' 
+    Exp_name = f'ens_AM4std_sw_{sky_cond}_LiH4W{hidden_layer_width}Relu_E{eng_loss}' 
     work_dir = '/tigress/cw55/work/2022_radi_nn/NN_AM4/work/'
-    total_run_num  = 4
-    epochs = 2000
-    de_save = 200 
+    total_run_num  = 3
+    epochs = 1000
+    de_save = 100 
+    print(f'>>| EXP: {Exp_name} ')
+    print(f'>>| Ensemble size: {ensemble_num} | total_run_num: {total_run_num} | epochs per run: {epochs} ')
     
     if eng_loss != 'Y':
         eng_loss_frac = None
-    elif sky_cond == 'cs':
-        eng_loss_frac = 1e-4 # lower loss weight for cs?
     else:
-        eng_loss_frac = 1e-4
+        if sky_cond == 'cs':
+            eng_loss_frac = 1e-4 # lower loss weight for cs?
+        else:
+            eng_loss_frac = 1e-4
         
     ######################################################
     # create dir for first run or load restart file
@@ -227,26 +108,29 @@ if __name__ == '__main__':
     try:
         ossyscmd = f'cp {os.path.abspath(__file__)} {exp_dir}/train_script{run_num:02d}.py' 
         os.system(ossyscmd) 
-    except: pass 
-    
-    # get data and do normalization
+    except: 
+        print('copy trainscript failed')
+    model_state_dict = []
+    # get restart info
     if run_num == 1:  
         nor_para = None
-        model_state_dict = None
+        for mi in range(ensemble_num):
+            model_state_dict.append(None)
         lr_sta = 1e-3
     else:   # load restart file
-        PATH_last =  exp_dir+f'/restart.{run_num-1:02d}.pth'
-        restart_data = torch.load(PATH_last)  # load exist results and restart training
-        print(f'restart from: {PATH_last}')
-        # read training dataset, nor_para, model parameteres
-        nor_para = restart_data['nor_para']
-        model_state_dict = restart_data['model_state_dict']
+        for mi in range(ensemble_num):
+            PATH_last =  exp_dir+f'/model{mi}_restart.{run_num-1:02d}.pth'
+            restart_data = torch.load(PATH_last)  # load exist results and restart training
+            print(f'restart from: {PATH_last}')
+            # read training dataset, nor_para, model parameteres
+            nor_para = restart_data['nor_para']
+            model_state_dict.append(restart_data['model_state_dict'])
         lr_sta = 1e-4
 
     ######################################################
     # load data from AM4 runs
-    filelist = [f'/scratch/gpfs/cw55/AM4/work/FIXSST_2000s_stellarcpu_intelmpi_22_768PE/'+
-            f'HISTORY/20000101.atmos_8xdaily.tile{_}.nc' for _ in range(1,7)] 
+    filelist = [f'/scratch/gpfs/cw55/AM4/work/CTL2000_train_y2000_stellarcpu_intelmpi_22_768PE/'+
+            f'HISTORY/20000101.atmos_8xdaily.tile{_}.nc' for _ in range(1,7)]
     input_array_ori, output_array_ori, rsdt_array_ori = \
     get_data_sw_AM4(filelist, condition=sky_cond, month_sel = None, day_sel = [1,7]) 
     
@@ -271,27 +155,30 @@ if __name__ == '__main__':
     
     ######################################################
     # initialize model
-    NNRTMC_solver = NNRTMC_NN(device, nor_para, A_k, B_k, 
-                              input_array.shape[1], hidden_layer_width, model_state_dict)  
+    NNRTMC_solver = []
+    for mi in range(ensemble_num):
+        NNRTMC_solver.append(NNRTMC_NN_sw(device, nor_para, A_k, B_k, 
+                             input_array.shape[1], hidden_layer_width, model_state_dict[mi]))
     # training 
     for i in range(run_num, total_run_num+1): 
         loss = []
         batch_size = max(8000, 8000*i**2)
         print(f'Train info >> run: {i} lr_sta: {lr_sta:7.1e}, batch size: {batch_size}')
-        custom_trainning(NNRTMC_solver, lr_sta, loss, epochs, batch_size, de_save,\
-                         input_torch, output_torch, rsdt_torch,\
-                         ind_train, ind_test, eng_loss_frac, device, rng )
-        loss_array = np.array(loss).squeeze().T  
+        custom_trainning_ens(NNRTMC_solver, lr_sta, loss, epochs, batch_size, de_save,\
+                             input_torch, output_torch, rsdt_torch,\
+                             ind_train, ind_test, eng_loss_frac, device, rng )
         ######################################################
         # save model state dict and data normalization info
         data_info = filelist
-        PATH =  exp_dir+f'/restart.{i:02d}.pth'
-        NNRTMC_solver.save_model_restart(PATH, loss_array, data_info, nor_para)
-        print('OUTPUT is saved at: '+PATH)        
-        print_key_results(NNRTMC_solver.predict(input_torch[ind_test,:])*rsdt_array[ind_test,None], 
-                          output_array[ind_test,:]*rsdt_array[ind_test,None], 
-                          nor_para)
-        lr_sta = 1e-4
+        for mi in range(len(NNRTMC_solver)):
+            loss_array = np.array(loss[mi]).squeeze().T  
+            PATH =  exp_dir+f'/model{mi}_restart.{i:02d}.pth'
+            NNRTMC_solver[mi].save_model_restart(PATH, loss_array, data_info, nor_para)
+            print(f'Model #{mi} is saved at: '+PATH)        
+            print_key_results(NNRTMC_solver[mi].predict(input_torch[ind_test,:])*rsdt_array[ind_test,None], 
+                              output_array[ind_test,:]*rsdt_array[ind_test,None], 
+                              nor_para)
+        lr_sta = 1e-4 # reset lr
         print(f'{Exp_name} Finished: run {i}!')  
         
     print('All runs finished. Increase <run_num> if you need to continue to train the model.')
