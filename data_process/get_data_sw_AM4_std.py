@@ -1,7 +1,9 @@
 import xarray as xr
-import numpy as np 
+import numpy as np
+import time
 
 def get_data_sw_AM4(filelist, condition='cs', month_sel = None, day_sel = None, return_coords = False):
+    sta_time = time.time()
     # sample data by month and day
     if month_sel == None:
         month_sel = [1,2,3,4,5,6,7,8,9,10,11,12] 
@@ -87,7 +89,7 @@ def get_data_sw_AM4(filelist, condition='cs', month_sel = None, day_sel = None, 
     input_array_ori  = np.concatenate( input_array_list,axis=1).T
     output_array_ori = np.concatenate(output_array_list,axis=1).T
     rsdt_array_ori   = np.concatenate(rsdt_array_list)
-    print('Done.')
+    print(f'\nRead data done. Use time: {time.time() - sta_time: 3.0f}s')
     if return_coords:
         return input_array_ori, output_array_ori, rsdt_array_ori, tiles_coords
     else:
