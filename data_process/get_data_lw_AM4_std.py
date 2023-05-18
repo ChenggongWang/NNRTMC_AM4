@@ -1,7 +1,9 @@
 import xarray as xr
-import numpy as np 
+import numpy as np
+import time
 
 def get_data_lw_AM4(filelist, condition = 'cs', month_sel = None, day_sel = None, return_coords = False):
+    sta_time = time.time()
     # sample data by month and day
     if month_sel == None:
         month_sel = [1,2,3,4,5,6,7,8,9,10,11,12]
@@ -24,8 +26,8 @@ def get_data_lw_AM4(filelist, condition = 'cs', month_sel = None, day_sel = None
     else: 
         raise Exception(f"condition {condition} is not configured") 
         
-    out_var_name_csaf = ['lwdn_sfc_clr', 'lwup_sfc', 'olr_clr', 'tdt_lw_clr']
-    out_var_name      = ['lwdn_sfc', 'lwup_sfc', 'olr', 'tdt_lw']
+    out_var_name_csaf = ['lwdn_sfc_clr', 'olr_clr', 'tdt_lw_clr']
+    out_var_name      = ['lwdn_sfc', 'olr', 'tdt_lw']
     if condition == 'cs':
         out_var_name = out_var_name_csaf 
     elif condition == 'all':
@@ -67,7 +69,8 @@ def get_data_lw_AM4(filelist, condition = 'cs', month_sel = None, day_sel = None
     #concatenate all tiles/files and transpose the matrix
     input_array_ori  = np.concatenate( input_array_list,axis=1).T
     output_array_ori = np.concatenate(output_array_list,axis=1).T
-    print('Done.')
+    print(f'\nRead data done. Use time: {time.time() - sta_time: 3.0f}s')
+      
     if return_coords:
         return input_array_ori, output_array_ori, tiles_coords
     else:
