@@ -10,10 +10,10 @@ torch.set_float32_matmul_precision('high')
 # NN module includes:
 # NN model structure 
 class NeuralNetwork(nn.Module):
-    def __init__(self, input_feature_num):
+    def __init__(self, input_feature_num, hidden_layer_width):
         super(NeuralNetwork, self).__init__()
         input_feature_num  = input_feature_num
-        hidden_layer_width = 256
+        hidden_layer_width = hidden_layer_width
         output_feature_num = 36
         self.Res_stack = nn.Sequential(
             nn.Linear(input_feature_num, hidden_layer_width),
@@ -36,13 +36,14 @@ class NeuralNetwork(nn.Module):
 
     
 class NNRTMC_NN: 
-    def __init__(self,  device, nor_para, Ak, Bk, input_feature_num, model_dict = None):
+    def __init__(self,  device, nor_para, Ak, Bk, 
+                 input_feature_num, hidden_layer_width, model_dict = None):
         """
         model_dict_path is the saved NN model state dict.
         """
         self.device = device
         # initial ANN
-        self.NN_model = NeuralNetwork(input_feature_num).to(self.device)  
+        self.NN_model = NeuralNetwork(input_feature_num, hidden_layer_width).to(self.device)  
         
         if model_dict is not None:
             self.NN_model.load_state_dict(model_dict) 
@@ -204,7 +205,9 @@ if __name__ == '__main__':
     sky_cond = args.sky_cond
     eng_loss = args.eng_loss  
     
-    Exp_name = f'AM4std2_sw_{sky_cond}_LiH4Relu_E{eng_loss}' 
+    hidden_layer_width = 256
+    
+    Exp_name = f'AM4std2_sw_{sky_cond}_LiH4W{hidden_layer_width}Relu_E{eng_loss}' 
     work_dir = '/tigress/cw55/work/2022_radi_nn/NN_AM4/work/'
     total_run_num  = 4
     epochs = 2000
@@ -268,7 +271,8 @@ if __name__ == '__main__':
     
     ######################################################
     # initialize model
-    NNRTMC_solver = NNRTMC_NN(device, nor_para, A_k, B_k, input_array.shape[1], model_state_dict)  
+    NNRTMC_solver = NNRTMC_NN(device, nor_para, A_k, B_k, 
+                              input_array.shape[1], hidden_layer_width, model_state_dict)  
     # training 
     for i in range(run_num, total_run_num+1): 
         loss = []
