@@ -1,9 +1,197 @@
 import numpy as np  
-import torch
 import pickle
 import math
 import os
+import torch
+from torch import nn   
 
+torch.set_float32_matmul_precision('high')
+
+######################################################
+# NN module includes:
+# NN model structure 
+class NeuralNetwork(nn.Module):
+    def __init__(self, input_feature_num, hidden_layer_width):
+        super(NeuralNetwork, self).__init__()
+        input_feature_num  = input_feature_num
+        hidden_layer_width = hidden_layer_width
+        output_feature_num = 36
+        self.Stack = nn.Sequential(
+            nn.Linear(input_feature_num, hidden_layer_width),
+            nn.BatchNorm1d(hidden_layer_width) ,
+            nn.ReLU(),
+            nn.Linear(hidden_layer_width, hidden_layer_width),
+            nn.BatchNorm1d(hidden_layer_width) ,
+            nn.ReLU(),
+            nn.Linear(hidden_layer_width, hidden_layer_width),
+            nn.BatchNorm1d(hidden_layer_width) ,
+            nn.ReLU(),
+            nn.Linear(hidden_layer_width, hidden_layer_width),
+            nn.BatchNorm1d(hidden_layer_width) ,
+            nn.ReLU(),
+            nn.Linear(hidden_layer_width, output_feature_num)
+        ) 
+        
+    def forward(self, x): 
+        return self.Stack(x)
+
+
+    
+class NNRTMC_NN: 
+    def __init__(self,  device, nor_para, Ak, Bk, 
+                 input_feature_num, hidden_layer_width, model_dict = None):
+        """
+        model_dict_path is the saved NN model state dict.
+        """
+        self.device = device
+        # initial ANN
+        self.NN_model = NeuralNetwork(input_feature_num, hidden_layer_width).to(self.device)  
+        
+        if model_dict is not None:
+            self.NN_model.load_state_dict(model_dict) 
+        self.optimizer = torch.optim.Adam(self.NN_model.parameters(), lr=1e-4, 
+                                          betas=(0.9, 0.999), weight_decay=1e-5) 
+        self.loss_fn   = torch.nn.MSELoss()
+        self.nor_para  = {key: torch.tensor(value).to(self.device) for key, value in nor_para.items()} 
+        
+        # parameters
+        self.Ak = torch.tensor(Ak).to(self.device)
+        self.Bk = torch.tensor(Bk).to(self.device)
+        self.C_p = 1004.64    # J/kg/K 
+        self.g   = 9.8        # m/s^2  
+        
+    
+    def predict(self, input_X):
+        self.NN_model.eval() # enter evaluation mode
+        with torch.no_grad():
+            pred = self.NN_model(input_X).cpu() # analyize on cpu
+        return pred
+ 
+    def return_dP_AM4_plev(self, ps): 
+        """
+        ps: Pa
+
+        return: 
+        """ 
+        P_lev = self.Ak + self.Bk*ps
+        # if not np.all(np.diff(p_int)>0):
+        #     raise Exception(f'Input [ps] is not valid. Check units!') 
+        dP = (P_lev[:,1:] - P_lev[:,:33])
+        return dP
+    
+    def save_model_restart(self, PATH, loss_array, data_info, nomral_para):
+        '''
+        Saving & Loading Model for Inference
+        Save/Load state_dict (Recommended)
+        Load: 
+        NNRTMC_solver= NNRTMC(device, model_dict_path = model_state_dict)
+        '''
+        # get a cpu copy of state dict
+        model_state_dict = {key: value.cpu() for key, value in self.NN_model.state_dict().items()}
+        # Save:
+        torch.save({ 'data_info'       : data_info,
+                     'loss_array'      : loss_array,
+                     'nor_para'        : nomral_para,
+                     'model_state_dict': model_state_dict
+                   } , PATH) 
+
+class NNRTMC_NN_sw(NNRTMC_NN): 
+    def train(self, train_batch_indice, input_torch, output_torch, 
+              rsdt_torch, eng_loss_frac=None, optimizer=None):
+        if optimizer is None: 
+            optimizer = self.optimizer
+        self.NN_model.train() # enter training mode
+        for i, batch_ids in enumerate(train_batch_indice):
+            X, Y, rsdt = input_torch [batch_ids,:], \
+                         output_torch[batch_ids,:], \
+                         rsdt_torch  [batch_ids  ]
+            # Compute prediction error
+            Y_pred = self.NN_model(X) 
+            loss_data = self.loss_fn(Y_pred, Y)
+            loss_ener = self.loss_energy(X, Y_pred, rsdt)
+            loss = loss_data
+            if eng_loss_frac != None: 
+                loss += loss_ener*eng_loss_frac
+            # Backpropagation
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        return [loss_data.item(), loss_ener.item()]
+     
+    
+    def test_loss(self, test_indice, input_torch, output_torch, rsdt_torch):
+        self.NN_model.eval() # enter evaluation mode
+        with torch.no_grad():
+            X, Y, rsdt = input_torch [test_indice,:], \
+                         output_torch[test_indice,:], \
+                         rsdt_torch  [test_indice  ]
+            Y_pred = self.NN_model(X) 
+            loss_data = self.loss_fn(Y_pred, Y).item() 
+            loss_ener = self.loss_energy(X, Y_pred, rsdt).item() 
+        return [loss_data, loss_ener]
+ 
+    def loss_energy(self,  input_data, output_pred, rsdt): 
+        F_net, sum_Cphr_gdp = self.energy_flux_HR(input_data , output_pred, rsdt) 
+        return self.loss_fn(F_net,sum_Cphr_gdp) 
+
+    def energy_flux_HR(self, Input, Output, rsdt): 
+        # ! rsdt is the last input var
+        Out_unnor = Output/self.nor_para['output_scale'] + self.nor_para['output_offset']
+        F_sw_toa_do = rsdt
+        F_sw_toa_up = Out_unnor[:,0]
+        F_sw_sfc_do = Out_unnor[:,1]
+        F_sw_sfc_up = Out_unnor[:,2]
+        HR = Out_unnor[:,3:]    #  K/s 
+        F_net = F_sw_toa_do*(1 - F_sw_toa_up + F_sw_sfc_up - F_sw_sfc_do) 
+        ps = Input[:,None,0]/self.nor_para['input_scale'][0] + self.nor_para['input_offset'][0] 
+        dP = self.return_dP_AM4_plev(ps)    #  Pa 
+        sum_Cphr_gdp = self.C_p/self.g * (HR*dP).sum(axis=-1) * F_sw_toa_do
+        return F_net, sum_Cphr_gdp
+    
+class NNRTMC_NN_lw(NNRTMC_NN): 
+    def train(self, train_batch_indice, input_torch, output_torch, eng_loss_frac=None, optimizer=None):
+        if optimizer is None: 
+            optimizer = self.optimizer
+        self.NN_model.train() # enter training mode
+        for i, batch_ids in enumerate(train_batch_indice):
+            X, Y = input_torch[batch_ids,:], output_torch[batch_ids,:]
+            # Compute prediction error
+            Y_pred = self.NN_model(X) 
+            loss_data = self.loss_fn(Y_pred, Y)
+            loss_ener = self.loss_energy_lw(X, Y_pred)
+            loss = loss_data
+            if eng_loss_frac != None: 
+                loss += loss_ener*eng_loss_frac
+            # Backpropagation
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        return [loss_data.item(), loss_ener.item()]
+    def test_loss(self, test_indice, input_torch, output_torch):
+        self.NN_model.eval() # enter evaluation mode
+        with torch.no_grad():
+            X, Y = input_torch [test_indice,:], output_torch[test_indice,:]
+            Y_pred = self.NN_model(X) 
+            loss_data = self.loss_fn(Y_pred, Y).item() 
+            loss_ener = self.loss_energy(X, Y_pred).item() 
+        return [loss_data, loss_ener]
+ 
+    def loss_energy(self,  input_data, output_pred ): 
+        F_net, sum_Cphr_gdp = self.energy_flux_HR(input_data , output_pred) 
+        return self.loss_fn(F_net,sum_Cphr_gdp) 
+
+    def energy_flux_HR(self, Input, Output):  
+        F_toa_up = Output[:,2]/self.nor_para['output_scale'][2] + self.nor_para['output_offset'][2]
+        F_sfc_do = Output[:,0]/self.nor_para['output_scale'][0] + self.nor_para['output_offset'][0]
+        F_sfc_up = Output[:,1]/self.nor_para['output_scale'][1] + self.nor_para['output_offset'][1]
+        F_net = F_sfc_up - F_sfc_do - F_toa_up
+        HR = Output[:,3:]/self.nor_para['output_scale'][3:] + self.nor_para['output_offset'][3:]            #  K/s 
+        ps = Input[:,None,0]/self.nor_para['input_scale'][0] + self.nor_para['input_offset'][0]
+        P_lev = self.return_dP_AM4_plev(ps)                #  Pa 
+        dP = (P_lev[:,1:] - P_lev[:,:33])
+        sum_Cphr_gdp = self.C_p/self.g * (HR*dP).sum(axis=-1) 
+        return F_net, sum_Cphr_gdp
+    
 def split_train_test_sample(sample_size, test_ratio ,rng):
     training_sample_size = math.ceil(sample_size*(1-test_ratio))
     shuffled_id = rng.choice(sample_size, sample_size, replace=False)
@@ -125,7 +313,7 @@ def return_exp_dir(parent_dir, Exp_name, create_dir=True):
             os.system(ossyscmd) 
     for run_num in range(1,100): 
         # PATH for the save the restart/result file
-        PATH =  exp_dir+f'/restart.{run_num:02d}.pth'
+        PATH =  exp_dir+f'/model0_restart.{run_num:02d}.pth'
         # print(PATH)
         if not os.path.exists(PATH): 
             return run_num, exp_dir
