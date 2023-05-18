@@ -118,7 +118,6 @@ class NNRTMC_NN_sw(NNRTMC_NN):
             optimizer.step()
         return [loss_data.item(), loss_ener.item()]
      
-    
     def test_loss(self, test_indice, input_torch, output_torch, rsdt_torch):
         self.NN_model.eval() # enter evaluation mode
         with torch.no_grad():
@@ -158,7 +157,7 @@ class NNRTMC_NN_lw(NNRTMC_NN):
             # Compute prediction error
             Y_pred = self.NN_model(X) 
             loss_data = self.loss_fn(Y_pred, Y)
-            loss_ener = self.loss_energy_lw(X, Y_pred)
+            loss_ener = self.loss_energy(X, Y_pred)
             loss = loss_data
             if eng_loss_frac != None: 
                 loss += loss_ener*eng_loss_frac
@@ -167,6 +166,7 @@ class NNRTMC_NN_lw(NNRTMC_NN):
             loss.backward()
             optimizer.step()
         return [loss_data.item(), loss_ener.item()]
+    
     def test_loss(self, test_indice, input_torch, output_torch):
         self.NN_model.eval() # enter evaluation mode
         with torch.no_grad():
@@ -187,8 +187,7 @@ class NNRTMC_NN_lw(NNRTMC_NN):
         F_net = F_sfc_up - F_sfc_do - F_toa_up
         HR = Output[:,3:]/self.nor_para['output_scale'][3:] + self.nor_para['output_offset'][3:]            #  K/s 
         ps = Input[:,None,0]/self.nor_para['input_scale'][0] + self.nor_para['input_offset'][0]
-        P_lev = self.return_dP_AM4_plev(ps)                #  Pa 
-        dP = (P_lev[:,1:] - P_lev[:,:33])
+        dP = self.return_dP_AM4_plev(ps)    #  Pa 
         sum_Cphr_gdp = self.C_p/self.g * (HR*dP).sum(axis=-1) 
         return F_net, sum_Cphr_gdp
     
@@ -285,8 +284,10 @@ def data_std_normalization_sw(input_array, output_array, rsdt_array, nomral_para
 
 def print_key_results(pred_output, true_output, normal_para): 
 ######################################################
-    # print key results 
-    error = (pred_output - true_output)/ normal_para['output_scale'] + normal_para['output_offset']
+    # print key results  # offset in pred and true cancels
+    error = (pred_output - true_output)/ normal_para['output_scale'] 
+    print('error.shape')
+    print(error.shape)
     error[:,3:] = error[:,3:]*86400  
     RMSE = ((error**2).mean(axis=0))**0.5
     MAE  = abs(error).mean(axis=0)
