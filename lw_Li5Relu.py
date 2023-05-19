@@ -78,16 +78,15 @@ if __name__ == '__main__':
     args=parser.parse_args()
     sky_cond = args.sky_cond
     eng_loss = args.eng_loss 
-    ensemble_size = int(args.ensemble_size) 
-    ensemble_num = ensemble_size  
+    ensemble_num = int(args.ensemble_size) 
     
     total_run_num  = 3
     hidden_layer_width = 256 
     
     Exp_name = f'ens_AM4std_lw_{sky_cond}_LiH4W{hidden_layer_width}Relu_E{eng_loss}' 
     work_dir = '/tigress/cw55/work/2022_radi_nn/NN_AM4/work/'
-    epochs = 200
-    de_save = 50 
+    epochs = 1000
+    de_save = 100 
     print(f'>>| EXP: {Exp_name} ')
     print(f'>>| Ensemble size {ensemble_num} | total_run_num: {total_run_num} | epochs per run: {epochs} ')
     
