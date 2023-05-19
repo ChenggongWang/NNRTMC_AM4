@@ -1,0 +1,11 @@
+# ignore all .out files
+*.out
+*.mod
+*bak.py
+*.test.ipynb
+__pycache__
+Untitled*
+work
+.ipynb_checkpoints
+data_process/.ipynb_checkpoints
+test*
