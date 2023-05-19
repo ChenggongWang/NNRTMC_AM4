@@ -11,11 +11,11 @@ torch.set_float32_matmul_precision('high')
 # NN module includes:
 # NN model structure 
 class NeuralNetwork(nn.Module):
-    def __init__(self, input_feature_num, hidden_layer_width):
+    def __init__(self, input_feature_num, output_feature_num, hidden_layer_width):
         super(NeuralNetwork, self).__init__()
         input_feature_num  = input_feature_num
         hidden_layer_width = hidden_layer_width
-        output_feature_num = 36
+        output_feature_num = output_feature_num
         self.Stack = nn.Sequential(
             nn.Linear(input_feature_num, hidden_layer_width),
             nn.BatchNorm1d(hidden_layer_width) ,
@@ -39,13 +39,13 @@ class NeuralNetwork(nn.Module):
     
 class NNRTMC_NN: 
     def __init__(self,  device, nor_para, Ak, Bk, 
-                 input_feature_num, hidden_layer_width, model_dict = None):
+                 input_feature_num, output_feature_num, hidden_layer_width, model_dict = None):
         """
         model_dict_path is the saved NN model state dict.
         """
         self.device = device
         # initial ANN
-        self.NN_model = NeuralNetwork(input_feature_num, hidden_layer_width).to(self.device)  
+        self.NN_model = NeuralNetwork(input_feature_num, output_feature_num, hidden_layer_width).to(self.device)  
         
         if model_dict is not None:
             self.NN_model.load_state_dict(model_dict) 
@@ -57,8 +57,9 @@ class NNRTMC_NN:
         # parameters
         self.Ak = torch.tensor(Ak).to(self.device)
         self.Bk = torch.tensor(Bk).to(self.device)
-        self.C_p = 1004.64    # J/kg/K 
-        self.g   = 9.8        # m/s^2  
+        self.C_p = 1004.64      # Specific heat capacity [J/kg/K] 
+        self.g   = 9.8          # GAV [m/s^2 ] 
+        self.sigma = 5.6734e-8  # Stefan-Boltzmann constant [W/m^2/K^4]
         
     
     def predict(self, input_X):
@@ -155,7 +156,7 @@ class NNRTMC_NN_lw(NNRTMC_NN):
         for i, batch_ids in enumerate(train_batch_indice):
             X, Y = input_torch[batch_ids,:], output_torch[batch_ids,:]
             # Compute prediction error
-            Y_pred = self.NN_model(X) 
+            Y_pred = self.NN_model(X)
             loss_data = self.loss_fn(Y_pred, Y)
             loss_ener = self.loss_energy(X, Y_pred)
             loss = loss_data
@@ -181,11 +182,12 @@ class NNRTMC_NN_lw(NNRTMC_NN):
         return self.loss_fn(F_net,sum_Cphr_gdp) 
 
     def energy_flux_HR(self, Input, Output):  
-        F_toa_up = Output[:,2]/self.nor_para['output_scale'][2] + self.nor_para['output_offset'][2]
         F_sfc_do = Output[:,0]/self.nor_para['output_scale'][0] + self.nor_para['output_offset'][0]
-        F_sfc_up = Output[:,1]/self.nor_para['output_scale'][1] + self.nor_para['output_offset'][1]
+        F_toa_up = Output[:,1]/self.nor_para['output_scale'][1] + self.nor_para['output_offset'][1]
+        Ts = Input[:,34]/self.nor_para['input_scale'][34] + self.nor_para['input_offset'][34]
+        F_sfc_up = self.sigma*Ts**4  # formula from AM4
         F_net = F_sfc_up - F_sfc_do - F_toa_up
-        HR = Output[:,3:]/self.nor_para['output_scale'][3:] + self.nor_para['output_offset'][3:]            #  K/s 
+        HR = Output[:,2:]/self.nor_para['output_scale'][2:] + self.nor_para['output_offset'][2:]            #  K/s 
         ps = Input[:,None,0]/self.nor_para['input_scale'][0] + self.nor_para['input_offset'][0]
         dP = self.return_dP_AM4_plev(ps)    #  Pa 
         sum_Cphr_gdp = self.C_p/self.g * (HR*dP).sum(axis=-1) 
@@ -215,7 +217,7 @@ def draw_batches(indice_train, batch_size, rng, device, replace=False):
     batch_indice_train.append(shuffled_id[sta:training_sample_size]) 
     return batch_indice_train 
 
-def data_std_normalization(input_array, output_array, nomral_para = None):
+def data_std_normalization_lw(input_array, output_array, nomral_para = None):
     sample_size = input_array.shape[0]
     print(f"Total data size: {sample_size}")
     ###################################################### 
@@ -299,7 +301,22 @@ def print_key_results(pred_output, true_output, normal_para):
     print('Validation:            Bias')  
     print(np.array2string(Bias,formatter={'float_kind':lambda x: "%9.2e" % x}))
 
- 
+def print_key_results_lw(pred_output, true_output, normal_para): 
+######################################################
+    # print key results  # offset in pred and true cancels
+    error = (pred_output - true_output)/ normal_para['output_scale'] 
+    # print('error.shape')
+    # print(error.shape)
+    error[:,2:] = error[:,2:]*86400  
+    RMSE = ((error**2).mean(axis=0))**0.5
+    MAE  = abs(error).mean(axis=0)
+    Bias = error.mean(axis=0)
+    print('Validation: RMSE')  
+    print(np.array2string(RMSE,formatter={'float_kind':lambda x: "%9.2e" % x}))
+    print('Validation:       MAE')  
+    print(np.array2string(MAE ,formatter={'float_kind':lambda x: "%9.2e" % x}))
+    print('Validation:            Bias')  
+    print(np.array2string(Bias,formatter={'float_kind':lambda x: "%9.2e" % x}))
     
 def return_exp_dir(parent_dir, Exp_name, create_dir=True): 
     
