@@ -317,7 +317,7 @@ def print_key_results_lw(pred_output, true_output, normal_para):
     print(np.array2string(MAE ,formatter={'float_kind':lambda x: "%9.2e" % x}))
     print('Validation:            Bias')  
     print(np.array2string(Bias,formatter={'float_kind':lambda x: "%9.2e" % x}))
-    
+
 def return_exp_dir(parent_dir, Exp_name, create_dir=True): 
     
     if not os.path.exists(parent_dir): 
