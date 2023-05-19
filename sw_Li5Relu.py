@@ -118,6 +118,9 @@ if __name__ == '__main__':
             model_state_dict.append(None)
         lr_sta = 1e-3
     else:   # load restart file
+        if rum_num >= total_run_num: 
+            print('All runs finished. Increase <run_num> if you need to continue to train the model.')
+            return 0
         for mi in range(ensemble_num):
             PATH_last =  exp_dir+f'/model{mi}_restart.{run_num-1:02d}.pth'
             restart_data = torch.load(PATH_last)  # load exist results and restart training

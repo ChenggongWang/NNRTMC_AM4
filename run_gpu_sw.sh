@@ -17,10 +17,10 @@ module load anaconda3/2022.5
 source /usr/licensed/anaconda3/2022.5/etc/profile.d/conda.sh
 conda activate pytorch20
 
-python -u sw_Li5Relu.py --sky_cond=cs  --eng_loss=N
-python -u sw_Li5Relu.py --sky_cond=all --eng_loss=N
-python -u sw_Li5Relu.py --sky_cond=cs  --eng_loss=Y
-python -u sw_Li5Relu.py --sky_cond=all --eng_loss=Y
+python -u sw_Li5Relu.py --sky_cond=cs  --eng_loss=Y --ensemble_size=2
+python -u sw_Li5Relu.py --sky_cond=all --eng_loss=Y --ensemble_size=2
+python -u sw_Li5Relu.py --sky_cond=cs  --eng_loss=N --ensemble_size=2
+python -u sw_Li5Relu.py --sky_cond=all --eng_loss=N --ensemble_size=2
 
 
 
