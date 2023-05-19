@@ -29,7 +29,7 @@ def pred_NN_batch(input_arr, output_arr, model, nor_para, device):
     for sta, end in batch_ind:
         # print(sta,end)
         # move all data to GPU
-        input_torch  = torch.tensor(input_arr[sta:end,:], dtype=torch.float32).to(device)
+        input_torch  = torch.tensor(input_arr [sta:end,:], dtype=torch.float32).to(device)
         output_torch = torch.tensor(output_arr[sta:end,:], dtype=torch.float32).to(device)
         # get output from NN
         pred_out_batch  = model.predict(input_torch)
@@ -41,6 +41,35 @@ def pred_NN_batch(input_arr, output_arr, model, nor_para, device):
         del input_torch, output_torch # release GPU memory
         torch.cuda.empty_cache()       
     return pred_out_array, eng_err_array
+
+def pred_NN_batch_sw(input_arr, output_arr, rsdt_arr, model, nor_para, device):
+    '''call NN to predict in batch to reduce memory use'''
+    sample_size = input_arr.shape[0]
+    batch_size = 10000*100 # 1 million columns in one batch
+    batch_ind = batch_index_sta_end(sample_size, batch_size)
+    pred_out_array = np.empty_like(output_arr)
+    eng_err_array  = np.empty_like(output_arr[:,0])
+    for sta, end in batch_ind:
+        # print(sta,end)
+        # move all data to GPU
+        input_torch  = torch.tensor(input_arr [sta:end,:], dtype=torch.float32).to(device)
+        output_torch = torch.tensor(output_arr[sta:end,:], dtype=torch.float32).to(device)
+        rsdt_torch   = torch.tensor(rsdt_arr  [sta:end  ], dtype=torch.float32).to(device)
+        # get output from NN
+        pred_out_batch  = model.predict(input_torch)
+        # check energy error
+        F_net, sum_Cphr_gdp = model.energy_flux_HR(input_torch , pred_out_batch.to(device), rsdt_torch) 
+        eng_err_array[sta:end]  =  (F_net - sum_Cphr_gdp).cpu().numpy() 
+        # denormalize
+        pred_out_array[sta:end,:] = pred_out_batch.numpy()/nor_para['output_scale'] + nor_para['output_offset'] 
+        del input_torch, output_torch # release GPU memory
+        torch.cuda.empty_cache()       
+     
+    # remove data that rsdt == 0 (night, no shortwave transfer) 
+    night_ind = np.argwhere(np.isclose(rsdt_arr, 0, atol=1e-1)).squeeze()
+    pred_out_array[night_ind] = 0
+    eng_err_array[night_ind] = 0 
+    return pred_out_array*rsdt_arr[:,None], eng_err_array
 
 def create_6tiles_sw(ds_coords, predi, error, eng_err, exp_dir, output_name): 
     '''save sw output as 6 nc files'''

@@ -1,3 +1,4 @@
+
 import xarray as xr
 import numpy as np 
 
@@ -36,29 +37,22 @@ def get_AM4_data_sw(out_filelist, inp_filelist, condition='csaf', month_sel = No
         inp_var_name_cloud  = ['stratiform_droplet_number' ,'stratiform_cloud_fraction' ,
                                'stratiform_liquid_content' ,'stratiform_ice_content'    ,
                                'shallow_droplet_number'    ,'shallow_cloud_fraction'    ,
-                               'shallow_liquid_content'    ,'shallow_ice_content'       ,
-                               'strat_size_drop'           ,'shallow_size_drop'          ]
-        # inp_var_name_aersol   = ['stratiform_droplet_number' ,'stratiform_cloud_fraction' ,
-        #                        'stratiform_liquid_content' ,'stratiform_ice_content'    ,
-        #                        'shallow_droplet_number'    ,'shallow_cloud_fraction'    ,
-        #                        'shallow_liquid_content'    ,'shallow_ice_content'       ,
-        #                        'strat_size_drop'           ,'shallow_size_drop'          ]
+                               'shallow_liquid_content'    ,'shallow_ice_content'       ] 
         if condition == 'csaf':
             inp_var_name = inp_var_name_csaf 
         elif condition == 'af':
             inp_var_name = inp_var_name_csaf + inp_var_name_cloud 
         else: raise Exception(f"condition {condition} is not configured")
-        
-        input_sf =[[ var_ps.stack(txy=("time","grid_yt", "grid_xt")).values],]
+        # ! add rsdt to input list, phalf[0] = TOA
+        rsdt = ds_out['rsd'].isel(phalf=0).stack(txy=("time","grid_yt", "grid_xt")).fillna(0).values
+        #pressure
+        input_sf =[[ var_ps.stack(txy=("time","grid_yt", "grid_xt")).values],rsdt[None,:]] 
         for _var in inp_var_name:  # for all vars
             tmp = ds_inp[_var].stack(txy=("time","grid_yt", "grid_xt")).fillna(0).values
             if len(tmp.shape)==1:
                 input_sf.append(tmp[None,:]) # addtional dim
             else:
                 input_sf.append(tmp)
-        # ! add rsdt to input list, phalf[0] = TOA
-        tmp = ds_out['rsd'].isel(phalf=0).stack(txy=("time","grid_yt", "grid_xt")).fillna(0).values
-        input_sf.append(tmp[None,:]) # addtional dim
         # concatenate all varibile into one big matrix
         input_sf = np.concatenate(input_sf)
         
@@ -82,13 +76,17 @@ def get_AM4_data_sw(out_filelist, inp_filelist, condition='csaf', month_sel = No
         elif condition == 'af':
             out_var_list = out_var_list_af  
         else: raise Exception(f"condition {condition} is not configured")
+        # inverse of rsdt
+        rsdt_r = np.where(np.isclose(rsdt,0,rtol=1e-05, atol=1e-2,), 0, 1/rsdt)
         output_sf = []
         for _var in out_var_list:  # for all vars
             tmp = _var.stack(txy=("time","grid_yt", "grid_xt")).fillna(0).values
             if len(tmp.shape)==1:
-                output_sf.append(tmp[None,:]) # addtional dim
-            else:
-                output_sf.append(tmp)
+                tmp = (tmp[None,:]) # addtional dim 
+            # # normalized by rsdt
+            # tmp = tmp*rsdt_r
+            output_sf.append(tmp)
+            
         # concatenate all varibile into one big matrix
         output_sf = np.concatenate(output_sf) 
         # get all tiles/files from different files

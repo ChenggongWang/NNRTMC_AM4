@@ -1,1 +1,0 @@
-./data_process/get_AM4_data_sw.py
