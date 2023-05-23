@@ -246,17 +246,18 @@ def data_std_normalization_lw(input_array, output_array, nomral_para = None):
     output_array = (output_array - nomral_para['output_offset'])*nomral_para['output_scale']
     return nomral_para, input_array, output_array 
 
-def data_std_normalization_sw(input_array, output_array, rsdt_array, nomral_para = None):
+def data_std_normalization_sw(input_array, output_array, rsdt_array, nomral_para = None, remove_night=True):
     sample_size = input_array.shape[0]
     print(f"Total data size: {sample_size}")
     day_ind = np.argwhere(~np.isclose(rsdt_array,0, atol=1e-1)).squeeze()
     # remove data that rsdt == 0 (night, no shortwave transfer) 
     sample_size2 = day_ind.shape[0]
-    print(f"Night time will be removed! (rsdt==0)")
-    input_array  = input_array [day_ind]
-    output_array = output_array[day_ind]
-    rsdt_array   = rsdt_array  [day_ind]
-    print(f"Total data size (daylight): {rsdt_array.shape}")
+    if remove_night == True:
+        print(f"Night time will be removed! (rsdt==0)")
+        input_array  = input_array [day_ind]
+        output_array = output_array[day_ind]
+        rsdt_array   = rsdt_array  [day_ind]
+        print(f"Total data size (daylight): {rsdt_array.shape}")
     ###################################################### 
     if nomral_para == None:
         ## normalization based on data std

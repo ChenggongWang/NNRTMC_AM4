@@ -118,7 +118,7 @@ if __name__ == '__main__':
             model_state_dict.append(None)
         lr_sta = 1e-3
     else:   # load restart file
-        if rum_num >= total_run_num: 
+        if run_num >= total_run_num: 
             print('All runs finished. Increase <run_num> if you need to continue to train the model.')
             return 0
         for mi in range(ensemble_num):

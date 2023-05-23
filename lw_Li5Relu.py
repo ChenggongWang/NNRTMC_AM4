@@ -3,12 +3,17 @@ import torch
 from torch import nn  
 import time 
 import os  
+######################################################
+import xarray as xr  
+from get_data_lw_AM4_std import get_data_lw_AM4
+import argparse, sys
 
 ######################################################
 # common functions to split the training and test data
 # 
 from NNRTMC_utils import NNRTMC_NN_lw, split_train_test_sample, \
 draw_batches, data_std_normalization_lw, print_key_results_lw, return_exp_dir
+
 torch.set_float32_matmul_precision('high')
 
 ######################################################
@@ -55,49 +60,7 @@ def custom_trainning_ens(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
                          ind_train, ind_test, eng_loss_frac, device, rng )
         loss.append(loss_mi)
         
-######################################################
-import xarray as xr  
-from get_data_lw_AM4_std import get_data_lw_AM4
-import argparse, sys
-
-if __name__ == '__main__': 
-    torch.cuda.set_device(0) # select gpu_id, default 0 means the first GPU
-    device = f'cuda:{torch.cuda.current_device()}'
-    # set random generator
-    rng = np.random.default_rng(12345)
-    torch.manual_seed(12345)
-    # rng = np.random.default_rng()
-    
-    #####################################################
-    # set exp name and runs 
-    # read sky_cond and eng_loss from terminal command
-    parser=argparse.ArgumentParser()
-    parser.add_argument("--sky_cond", help="sky condition: af, csaf")
-    parser.add_argument("--eng_loss", help="minimize the energy loss: Y/N")
-    parser.add_argument("--ensemble_size", help="ensemble_size of NN models")
-    args=parser.parse_args()
-    sky_cond = args.sky_cond
-    eng_loss = args.eng_loss 
-    ensemble_num = int(args.ensemble_size) 
-    
-    total_run_num  = 3
-    hidden_layer_width = 256 
-    
-    Exp_name = f'ens_AM4std_lw_{sky_cond}_LiH4W{hidden_layer_width}Relu_E{eng_loss}' 
-    work_dir = '/tigress/cw55/work/2022_radi_nn/NN_AM4/work/'
-    epochs = 1000
-    de_save = 100 
-    print(f'>>| EXP: {Exp_name} ')
-    print(f'>>| Ensemble size {ensemble_num} | total_run_num: {total_run_num} | epochs per run: {epochs} ')
-    
-    if eng_loss != 'Y':
-        eng_loss_frac = None
-    else:
-        if sky_cond == 'cs':
-            eng_loss_frac = 1e-4 # lower loss weight for cs?
-        else:
-            eng_loss_frac = 1e-4
-        
+def main():
     ######################################################
     # create dir for first run or load restart file
     run_num, exp_dir = return_exp_dir(work_dir, Exp_name)
@@ -115,6 +78,9 @@ if __name__ == '__main__':
             model_state_dict.append(None)
         lr_sta = 1e-3
     else:   # load restart file
+        if run_num >= total_run_num: 
+            print('All runs finished. Increase <run_num> if you need to continue to train the model.')
+            return 1
         for mi in range(ensemble_num):
             PATH_last =  exp_dir+f'/model{mi}_restart.{run_num-1:02d}.pth'
             restart_data = torch.load(PATH_last)  # load exist results and restart training
@@ -179,7 +145,48 @@ if __name__ == '__main__':
         print(f'{Exp_name} Finished: run {i}!')  
         
     print('All runs finished. Increase <run_num> if you need to continue to train the model.')
+    return 0 
 
+if __name__ == '__main__': 
+    torch.cuda.set_device(0) # select gpu_id, default 0 means the first GPU
+    device = f'cuda:{torch.cuda.current_device()}'
+    # set random generator
+    rng = np.random.default_rng(12345)
+    torch.manual_seed(12345)
+    # rng = np.random.default_rng()
+    
+    #####################################################
+    # set exp name and runs 
+    # read sky_cond and eng_loss from terminal command
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--sky_cond", help="sky condition: af, csaf")
+    parser.add_argument("--eng_loss", help="minimize the energy loss: Y/N")
+    parser.add_argument("--ensemble_size", help="ensemble_size of NN models")
+    args=parser.parse_args()
+    sky_cond = args.sky_cond
+    eng_loss = args.eng_loss 
+    ensemble_num = int(args.ensemble_size) 
+    
+    total_run_num  = 3
+    hidden_layer_width = 256 
+    
+    Exp_name = f'ens_AM4std_lw_{sky_cond}_LiH4W{hidden_layer_width}Relu_E{eng_loss}' 
+    work_dir = '/tigress/cw55/work/2022_radi_nn/NN_AM4/work/'
+    epochs = 1000
+    de_save = 100 
+    print(f'>>| EXP: {Exp_name} ')
+    print(f'>>| Ensemble size {ensemble_num} | total_run_num: {total_run_num} | epochs per run: {epochs} ')
+    
+    if eng_loss != 'Y':
+        eng_loss_frac = None
+    else:
+        if sky_cond == 'cs':
+            eng_loss_frac = 1e-4 # lower loss weight for cs?
+        else:
+            eng_loss_frac = 1e-4
+        
+    tmp = main()
+    
     # move slurm log to work dir
     job_id = int(os.environ["SLURM_JOB_ID"])
     ossyscmd = f'cp slurm-{job_id}.out {exp_dir}/' 

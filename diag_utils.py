@@ -34,10 +34,10 @@ def pred_NN_batch(input_arr, output_arr, model, nor_para, device):
         # get output from NN
         pred_out_batch  = model.predict(input_torch)
         # check energy error
-        F_net, sum_Cphr_gdp = model.energy_flux_HR(input_torch , pred_out_batch.to(device)) 
+        F_net, sum_Cphr_gdp = model.energy_flux_HR(input_torch, torch.tensor(pred_out_batch).to(device)) 
         eng_err_array[sta:end]  =  (F_net - sum_Cphr_gdp).cpu().numpy() 
         # denormalize
-        pred_out_array[sta:end,:] = pred_out_batch.cpu().numpy()/nor_para['output_scale'] + nor_para['output_offset'] 
+        pred_out_array[sta:end,:] = pred_out_batch/nor_para['output_scale'] + nor_para['output_offset'] 
         del input_torch, output_torch # release GPU memory
         torch.cuda.empty_cache()       
     return pred_out_array, eng_err_array
@@ -58,14 +58,14 @@ def pred_NN_batch_sw(input_arr, output_arr, rsdt_arr, model, nor_para, device):
         # get output from NN
         pred_out_batch  = model.predict(input_torch)
         # check energy error
-        F_net, sum_Cphr_gdp = model.energy_flux_HR(input_torch , pred_out_batch.to(device), rsdt_torch) 
+        F_net, sum_Cphr_gdp = model.energy_flux_HR(input_torch, torch.tensor(pred_out_batch).to(device), rsdt_torch) 
         eng_err_array[sta:end]  =  (F_net - sum_Cphr_gdp).cpu().numpy() 
         # denormalize
-        pred_out_array[sta:end,:] = pred_out_batch.numpy()/nor_para['output_scale'] + nor_para['output_offset'] 
-        del input_torch, output_torch # release GPU memory
+        pred_out_array[sta:end,:] = pred_out_batch/nor_para['output_scale'] + nor_para['output_offset'] 
+        del input_torch, output_torch, rsdt_torch# release GPU memory
         torch.cuda.empty_cache()       
      
-    # remove data that rsdt == 0 (night, no shortwave transfer) 
+    # remove data that rsdt == 0 (night, no shortwave ) 
     night_ind = np.argwhere(np.isclose(rsdt_arr, 0, atol=1e-1)).squeeze()
     pred_out_array[night_ind] = 0
     eng_err_array[night_ind] = 0 
@@ -179,14 +179,66 @@ def create_6tiles_lw(ds_coords, predi, error, eng_err, exp_dir, output_name):
     print('Done.')
     return var_list
 
+def create_6tiles_lw_v2(ds_coords, predi, error, eng_err, exp_dir, output_name): 
+    '''save lw output as 6 nc files'''
+    print('Creating 6 tiles ... ', end='  ')
+    time    = ds_coords[0]['time']
+    pfull   = ds_coords[0]['pfull']
+    grid_yt = ds_coords[0]['grid_yt']
+    grid_xt = ds_coords[0]['grid_xt']
+    txy_size = time.shape[0]*grid_xt.shape[0]*grid_yt.shape[0]
+    if (predi.shape[0]/txy_size) !=6:
+        raise Exception('wrong size of output, pls check data dimension')
+    for i in range(6):
+        output_nn_ti = predi[txy_size*i:txy_size*(i+1)]
+        output_nn_ti = output_nn_ti.reshape(time.shape[0],
+                                            grid_yt.shape[0],
+                                            grid_xt.shape[0],
+                                            -1)
+        output_err_ti = error[txy_size*i:txy_size*(i+1)]
+        output_err_ti = output_err_ti.reshape(time.shape[0],
+                                              grid_yt.shape[0],
+                                              grid_xt.shape[0],
+                                              -1)
+        eng_err_ti = eng_err[txy_size*i:txy_size*(i+1)]
+        eng_err_ti = eng_err_ti.reshape(time.shape[0],
+                                        grid_yt.shape[0],
+                                        grid_xt.shape[0] )
+        ds = xr.Dataset( 
+                        {'rlds':      (["time", "grid_yt", "grid_xt"], output_nn_ti[:,:,:,0]), 
+                         'rlut':      (["time", "grid_yt", "grid_xt"], output_nn_ti[:,:,:,1]),
+                         'tntrl':     (["time", "grid_yt", "grid_xt", "pfull"], output_nn_ti[:,:,:,2:]),
+                         'err_rlds':  (["time", "grid_yt", "grid_xt"], output_err_ti[:,:,:,0]), 
+                         'err_rlut':  (["time", "grid_yt", "grid_xt"], output_err_ti[:,:,:,1]),
+                         'err_tntrl': (["time", "grid_yt", "grid_xt", "pfull"], output_err_ti[:,:,:,2:]),
+                         'err_eng':   (["time", "grid_yt", "grid_xt"], eng_err_ti),
+                        },
+                        coords=ds_coords[i]
+                        )
+        var_4d_name = ['tntrl', 'err_tntrl']
+        var_3d_name = ['rlds', 'rlut',
+                       'err_rlds', 'err_rlut', 'err_eng']
+        for _var in var_4d_name:
+            ds[_var] = ds[_var].transpose("time", "pfull", "grid_yt", "grid_xt")
+        for _var in var_3d_name:
+            ds[_var] = ds[_var].transpose("time", "grid_yt", "grid_xt")
+        encoding={}
+        for _var in list(ds.keys()):
+            encoding[_var] = {"dtype":"float32", "_FillValue":None} 
+        ds.to_netcdf(exp_dir+f'/NN_pred/{output_name}.tile{i+1}.nc', encoding=encoding)
+        var_list = list(ds.keys())
+        ds.close()
+    print('Done.')
+    return var_list
 def regrid_6tile2latlon(var_list,exp_dir,root,output_name):
     '''run fregrid in subshell'''
     print('Calling fregrid in subshell ... ', end='  ')
     var_list_str = ','.join(var_list)
     cmd = f"cd {exp_dir}/NN_pred;"\
          +f"cp {root}/regrid/* . ;"\
-         +f"bash run_fregrid.sh {output_name} {var_list_str};"\
-         +f"rm {output_name}.tile*"
+         +f"bash run_fregrid.sh {output_name} {var_list_str};"
+    # \
+    #      +f"rm {output_name}.tile*"
     tmp=subprocess.run([cmd], shell=True, capture_output=True)
     if tmp.stderr.decode("utf-8") != '': 
         raise Exception(tmp.stderr.decode("utf-8")) 
