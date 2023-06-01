@@ -35,7 +35,7 @@ def custom_trainning(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
         lossv     = NNRTMC_solver.train(batch_indice_train, input_torch, output_torch, eng_loss_frac)
         lossvtest = NNRTMC_solver.test_loss(indice_test, input_torch,  output_torch)
         lr_scheduler.step(lossvtest[0]+lossvtest[1]) # update lr based on test loss
-        if t % de_save == 0:
+        if (t % de_save == 0) or (t == epochs-1):
             used_time = time.time() - sta_time  
             print( f"Epoch {t+1:05d} |Train L: {lossv[0]:8.2e} {lossv[1]:8.2e} | Vali. L: {lossvtest[0]:7.1e} {lossvtest[1]:7.1e}  "
                   +f"| ~ {used_time:3.0f}s | eta {int(used_time*((epochs-t)/de_save/60)) :3d} min")
@@ -55,12 +55,12 @@ def custom_trainning_ens(NNRTMC_solver, lr, loss, epochs, batch_size, de_save,
     for mi in range(len(NNRTMC_solver)): 
         print(f"Model #{mi}")
         loss_mi = []
-        custom_trainning(NNRTMC_solver[mi], lr_sta, loss_mi, epochs, batch_size, de_save,\
+        custom_trainning(NNRTMC_solver[mi], lr, loss_mi, epochs, batch_size, de_save,\
                          input_torch, output_torch, \
-                         ind_train, ind_test, eng_loss_frac, device, rng )
+                         indice_train, indice_test, eng_loss_frac, device, rng )
         loss.append(loss_mi)
         
-def main():
+def main(work_dir, Exp_name):
     ######################################################
     # create dir for first run or load restart file
     run_num, exp_dir = return_exp_dir(work_dir, Exp_name)
@@ -95,7 +95,7 @@ def main():
     filelist = [f'/scratch/gpfs/cw55/AM4/work/CTL2000_train_y2000_stellarcpu_intelmpi_22_768PE/'+
             f'HISTORY/20000101.atmos_8xdaily.tile{_}.nc' for _ in range(1,7)] 
     input_array_ori, output_array_ori = \
-    get_data_lw_AM4(filelist, condition=sky_cond, month_sel = None, day_sel = [1,7])   
+    get_data_lw_AM4(filelist, condition=sky_cond, month_sel = None, day_sel = [2,10])   
     
     hybrid_p_sigma_para = xr.open_dataset('/tigress/cw55/data/NNRTMC_dataset/AM4_pk_bk_202207.nc')
     A_k = hybrid_p_sigma_para.ak.values[None,:]
@@ -126,7 +126,10 @@ def main():
     for i in range(run_num, total_run_num+1): 
         loss = []
         batch_size = max(8000, 8000*i**2)
-        print(f'Train info >> run: {i} lr_sta: {lr_sta:7.1e}, batch size: {batch_size}')
+        if eng_loss_frac != None:
+            print(f'Train info >> run: {i} lr_sta: {lr_sta:7.1e}, batch size: {batch_size}, eng_loss_frac {eng_loss_frac:7.1e}')
+        else:
+            print(f'Train info >> run: {i} lr_sta: {lr_sta:7.1e}, batch size: {batch_size}')
         custom_trainning_ens(NNRTMC_solver, lr_sta, loss, epochs, batch_size, de_save,\
                              input_torch, output_torch, \
                              ind_train, ind_test, eng_loss_frac, device, rng )
@@ -145,7 +148,7 @@ def main():
         print(f'{Exp_name} Finished: run {i}!')  
         
     print('All runs finished. Increase <run_num> if you need to continue to train the model.')
-    return 0 
+    return exp_dir
 
 if __name__ == '__main__': 
     torch.cuda.set_device(0) # select gpu_id, default 0 means the first GPU
@@ -170,22 +173,23 @@ if __name__ == '__main__':
     total_run_num  = 3
     hidden_layer_width = 256 
     
-    Exp_name = f'ens_AM4std_lw_{sky_cond}_LiH4W{hidden_layer_width}Relu_E{eng_loss}' 
+    Exp_name = f'ens_AM4std_lw_{sky_cond}_LiH4W{hidden_layer_width}ReluSig_E{eng_loss}' 
     work_dir = '/tigress/cw55/work/2022_radi_nn/NN_AM4/work/'
-    epochs = 1000
-    de_save = 100 
+    epochs = 2000
+    de_save = 200 
     print(f'>>| EXP: {Exp_name} ')
     print(f'>>| Ensemble size {ensemble_num} | total_run_num: {total_run_num} | epochs per run: {epochs} ')
     
     if eng_loss != 'Y':
         eng_loss_frac = None
     else:
-        if sky_cond == 'cs':
-            eng_loss_frac = 1e-4 # lower loss weight for cs?
-        else:
-            eng_loss_frac = 1e-4
+        # if sky_cond == 'cs':
+        #     eng_loss_frac = 1e-6 # lower loss weight for cs?
+        # else:
+        #     eng_loss_frac = 1e-6
+        eng_loss_frac = 1e-6
         
-    tmp = main()
+    exp_dir = main(work_dir, Exp_name)
     
     # move slurm log to work dir
     job_id = int(os.environ["SLURM_JOB_ID"])

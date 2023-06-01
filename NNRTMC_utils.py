@@ -29,7 +29,8 @@ class NeuralNetwork(nn.Module):
             nn.Linear(hidden_layer_width, hidden_layer_width),
             nn.BatchNorm1d(hidden_layer_width) ,
             nn.ReLU(),
-            nn.Linear(hidden_layer_width, output_feature_num)
+            nn.Linear(hidden_layer_width, output_feature_num),
+            nn.Sigmoid()
         ) 
         
     def forward(self, x): 
@@ -182,12 +183,13 @@ class NNRTMC_NN_lw(NNRTMC_NN):
         return self.loss_fn(F_net,sum_Cphr_gdp) 
 
     def energy_flux_HR(self, Input, Output):  
-        F_sfc_do = Output[:,0]/self.nor_para['output_scale'][0] + self.nor_para['output_offset'][0]
-        F_toa_up = Output[:,1]/self.nor_para['output_scale'][1] + self.nor_para['output_offset'][1]
+        Out_unnor = Output/self.nor_para['output_scale'] + self.nor_para['output_offset']
+        F_sfc_do = Out_unnor[:,0]
+        F_toa_up = Out_unnor[:,1]
         Ts = Input[:,34]/self.nor_para['input_scale'][34] + self.nor_para['input_offset'][34]
         F_sfc_up = self.sigma*Ts**4  # formula from AM4
         F_net = F_sfc_up - F_sfc_do - F_toa_up
-        HR = Output[:,2:]/self.nor_para['output_scale'][2:] + self.nor_para['output_offset'][2:]            #  K/s 
+        HR = Out_unnor[:,2:]    #  K/s 
         ps = Input[:,None,0]/self.nor_para['input_scale'][0] + self.nor_para['input_offset'][0]
         dP = self.return_dP_AM4_plev(ps)    #  Pa 
         sum_Cphr_gdp = self.C_p/self.g * (HR*dP).sum(axis=-1) 
@@ -230,13 +232,14 @@ def data_std_normalization_lw(input_array, output_array, nomral_para = None):
             input_scale     = np.where(np.isclose(input_scale,0), 1, input_scale)  
         input_scale     = 1/input_scale
         input_offset    = input_array.mean(axis=0)
-        output_scale    = output_array.std(axis=0)
+        output_scale    = (output_array.max(axis=0)-output_array.min(axis=0))
         # check not varying input
         if np.any(np.isclose(output_scale,0,atol=1e-10)):
             print(f'Warning: {np.isclose(output_scale,0).sum()} output feature(s) is fixed!')
-            output_scale     = np.where(np.isclose(output_scale,0), 1, output_scale)  
-        output_scale    = 1/output_scale
-        output_offset   = output_array.mean(axis=0)
+            output_scale     = np.where(np.isclose(output_scale,0), 1, output_scale) 
+        # Scale output to ~[0.05, 0.95]
+        output_offset   = output_array.min(axis=0) - 0.05 * output_scale
+        output_scale    = 1/(1.1 * output_scale)
         nomral_para = {'input_scale'   : input_scale, 
                        'input_offset'  : input_offset,
                        'output_scale'  : output_scale,
@@ -326,8 +329,7 @@ def return_exp_dir(parent_dir, Exp_name, create_dir=True):
     exp_dir = parent_dir+Exp_name
     if create_dir == True:
         if not os.path.exists(exp_dir): 
-            print('First run!')
-            print(f'Create experiment dir at: \n {exp_dir}')
+            print('>>| First run! '+f'Create experiment dir at: \n{exp_dir}')
             # create work dir for experiment to store results 
             os.mkdir(exp_dir)  
             # copy script to experiment dir for reference
