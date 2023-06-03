@@ -34,7 +34,7 @@ class NeuralNetwork(nn.Module):
         ) 
         
     def forward(self, x): 
-        return self.Stack(x)
+        return self.Stack(x)*10.0
 
 
     
@@ -239,7 +239,7 @@ def data_std_normalization_lw(input_array, output_array, nomral_para = None):
             output_scale     = np.where(np.isclose(output_scale,0), 1, output_scale) 
         # Scale output to ~[0.05, 0.95]
         output_offset   = output_array.min(axis=0) - 0.05 * output_scale
-        output_scale    = 1/(1.1 * output_scale)
+        output_scale    = 10.0/(1.1 * output_scale)
         nomral_para = {'input_scale'   : input_scale, 
                        'input_offset'  : input_offset,
                        'output_scale'  : output_scale,

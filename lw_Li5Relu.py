@@ -173,7 +173,7 @@ if __name__ == '__main__':
     total_run_num  = 3
     hidden_layer_width = 256 
     
-    Exp_name = f'ens_AM4std_lw_{sky_cond}_LiH4W{hidden_layer_width}ReluSig_E{eng_loss}' 
+    Exp_name = f'ens_AM4std_lw_{sky_cond}_LiH4W{hidden_layer_width}ReluSig_E{eng_loss}_D210' 
     work_dir = '/tigress/cw55/work/2022_radi_nn/NN_AM4/work/'
     epochs = 2000
     de_save = 200 
@@ -183,11 +183,7 @@ if __name__ == '__main__':
     if eng_loss != 'Y':
         eng_loss_frac = None
     else:
-        # if sky_cond == 'cs':
-        #     eng_loss_frac = 1e-6 # lower loss weight for cs?
-        # else:
-        #     eng_loss_frac = 1e-6
-        eng_loss_frac = 1e-6
+        eng_loss_frac = 1e-4
         
     exp_dir = main(work_dir, Exp_name)
     
