@@ -271,13 +271,14 @@ def data_std_normalization_sw(input_array, output_array, rsdt_array, nomral_para
             input_scale     = np.where(np.isclose(input_scale,0), 1, input_scale)  
         input_scale     = 1/input_scale
         input_offset    = input_array.mean(axis=0)
-        output_scale    = output_array.std(axis=0)
+        output_scale    = (output_array.max(axis=0)-output_array.min(axis=0))
         # check not varying input
         if np.any(np.isclose(output_scale,0,atol=1e-10)):
             print(f'Warning: {np.isclose(output_scale,0, atol=1e-10).sum()} output feature(s) is fixed!')
             output_scale     = np.where(np.isclose(output_scale,0), 1, output_scale)  
-        output_scale    = 1/output_scale
-        output_offset   = output_array.mean(axis=0)
+        # Scale output to ~[0., 0.95]
+        output_offset   = output_array.min(axis=0)
+        output_scale    = 10.0/(1.05 * output_scale)
         nomral_para = {'input_scale'   : input_scale, 
                        'input_offset'  : input_offset,
                        'output_scale'  : output_scale,
