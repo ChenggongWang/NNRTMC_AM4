@@ -19,7 +19,7 @@ trap 'echo "\"${last_command}\" command filed with exit code $?."' EXIT
 echo $SHELL
 source /tigress/cw55/stellar/FRE-NCtools/build/env.stellar.sh
 export fregrid=/tigress/cw55/stellar/FRE-NCtools/build/bin/fregrid
-
+# rm fregrid_remap_file*
 $fregrid --input_mosaic C96_mosaic.nc \
 	--input_file $1 \
 	--interp_method conserve_order1 \
